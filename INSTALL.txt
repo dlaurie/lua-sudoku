@@ -1,0 +1,4 @@
+1. Compile `dance.c`.
+2. Put the executable where the Lua command `os.execute"dance"` would run it.
+3. If you plan to use `sudoku.lua` as a loadable module, put it in your 
+module path.

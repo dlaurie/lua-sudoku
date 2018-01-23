@@ -1,0 +1,93 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <meta http-equiv="Content-Style-Type" content="text/css" />
+  <meta name="generator" content="pandoc" />
+  <meta name="author" content="Dirk Laurie" />
+  <title>How to solve Killer Sudokus by Knuth's Dancing Links algorithm</title>
+  <style type="text/css">code{white-space: pre;}</style>
+  <link rel="stylesheet" href="lua-notes.css" type="text/css" />
+</head>
+<body>
+<div id="header">
+<h1 class="title">How to solve Killer Sudokus by Knuth's Dancing Links algorithm</h1>
+<h2 class="author">Dirk Laurie</h2>
+<h3 class="date">January 2018</h3>
+</div>
+<p>A Killer Sudoku puzzle is one in which the totals in irregularly shaped cages of various sizes are given, rather than just the digits in some cells.</p>
+<h2 id="representation-of-a-classic-sudoku-as-a-covering-problem">Representation of a classic Sudoku as a covering problem</h2>
+<p>The <em>exact covering problem</em> is to find a mutually disjoint subcollection of a given collection of subsets of a given universe of labels, such that their union contains all the labels in the universe. This problem is elegantly solved by Donald Knuth's &quot;Dancing Links&quot; algorithm, for which he supplied a program <code>dance.w</code>.<a href="#fn1" class="footnoteRef" id="fnref1"><sup>1</sup></a></p>
+<p>Knuth himself showed how to specify a Sudoku grid as 729 such subsets, one for each way of entering a particular digit into a particular cell. The solution comprises 81 of these.</p>
+<p>The labels fall into four classs of 81, respectively expressing the constraints that every cell contains exactly one digit, and that any particular digit appears exactly once in every row, column and 3x3 box. He supplied a program <code>sudoku.w</code> that generates Dance input from Sudoku input.</p>
+<p>Knuth in <code>sudoku.w</code> uses labels like <code>b32</code> etc, with one lower-case letter (a different one for each class) and two digits. We prefer to assemble the labels out of unique symbols for rows (<code>A</code> to <code>I</code>), columns (<code>a</code> to <code>i</code>) and digits (<code>1</code> to <code>9</code>), so that the notations <code>Ab</code>, <code>A3</code> and <code>b3</code> respectively denote &quot;the cell in row <code>A</code>, column <code>b</code>&quot;, &quot;the digit 3 in row <code>A</code>&quot; and &quot;the digit 3 in column <code>b</code>&quot;. Each such two-character label expresses a constraint, e.g. <code>A7</code> and <code>Eg</code> respectively mean &quot;there is exactly one <code>7</code> in row <code>A</code>&quot; and &quot;cell <code>Eg</code> contains exactly one digit&quot;.</p>
+<p>Labels containing one symbol of each kind can be thought of as belonging to the subsets; e.g., <code>Ab3</code> means &quot;the cell in row <code>A</code>, column <code>b</code> contains the digit <code>3</code>&quot;. Three of the labels in a subset can simply be read off from its own label by omitting one character.</p>
+<p>A box is a little more complicated. In fact, it is best thought of as a special case of a cage. We borrow Knuth's idea of a lower-case letter for a class of labels, but since <code>b</code> means the second column, we use the last rather than the first letter of the word &quot;box&quot;. This letter is prefixed to the label of the cell in the upper-left corner of the box, i.e. <code>xAa</code> is the box with diagonal <code>Aa</code> to <code>Cc</code>.</p>
+<h2 id="using-the-data-from-a-sudoku-puzzle">Using the data from a Sudoku puzzle</h2>
+<p>The typical empty cell is represented by a four-element subset, one from each class, e.g.</p>
+<pre><code>Bc B7 c7 xAa7</code></pre>
+<p>The main task of <code>sudoku.w</code> is to incorporate data by pruning the labels and subsets so that only those compatible with the givens remain. Each given eliminates four labels (those in its subset) and eight subsets (the others that contain its cell).</p>
+<p>This is a task that <code>dance.w</code> could also do, if given some extra constraints. All we need to do is to add one unique label to each subset corresponding to a given. Since that label must be covered, and no other subset contains it, that subset must be included in the solution. Because of the way that the Dancing Links algorithm works --- operating at each stage on the label belonging to the fewest subsets --- those subsets will be chosen before any subsets that have only non-unique labels.</p>
+<p>The obvious choice for that unique label is that of the subset itself. Suppose that it is given that the cell in row <code>B</code>, column <code>c</code> contains the digit 9. The subset describing that information is</p>
+<pre><code>Bc B9 c9 xAa9 Bc9</code></pre>
+<p>Here is a Lua program that generates Dance input from Sudoku input (any non-blank character except the digits <code>1</code> to <code>9</code> denotes an empty cell).</p>
+<pre><code>local universe, data = {}, {}
+local rows, cols = &quot;ABCDEFGHI&quot;, &quot;abcdefghi&quot;
+local digits = &quot;123456789&quot;
+local box = {A=&#39;A&#39;,B=&#39;A&#39;,C=&#39;A&#39;,D=&#39;D&#39;,E=&#39;D&#39;,F=&#39;D&#39;,G=&#39;G&#39;,H=&#39;G&#39;,I=&#39;G&#39;,
+             a=&#39;a&#39;,b=&#39;a&#39;,c=&#39;a&#39;,d=&#39;d&#39;,e=&#39;d&#39;,f=&#39;d&#39;,g=&#39;g&#39;,h=&#39;g&#39;,i=&#39;g&#39;}
+local function populate(first,second)
+  for f in first:gmatch&quot;.&quot; do
+    for s in second:gmatch&quot;.&quot; do
+      universe[#universe+1] = f..s
+    end
+  end
+end
+populate(rows,cols)
+populate(rows,digits)
+populate(cols,digits)    
+for r in rows:gmatch&quot;(.)..&quot; do
+  for c in cols:gmatch&quot;(.)..&quot; do
+    for d in digits:gmatch&quot;.&quot; do
+      universe[#universe+1] = &#39;x&#39;..r..c..d
+    end
+  end
+end
+local cell = (io.read&quot;a&quot;):gmatch&quot;%S&quot;
+for r in (&quot;ABCDEFGHI&quot;):gmatch&quot;.&quot; do
+  for c in (&quot;abcdefghi&quot;):gmatch&quot;.&quot; do
+    local digit=cell()
+    for d in digits:gmatch&quot;.&quot; do
+      local subset = {r..c, r..d, c..d, &#39;x&#39;..box[r]..box[c]..d}
+      if d==digit then
+        local label = r..c..d
+        universe[#universe+1] = label
+        subset[#subset+1]=label
+      end
+      data[#data+1] = table.concat(subset,&#39; &#39;)
+    end
+  end
+end
+print(table.concat(universe,&#39; &#39;))
+for _,v in ipairs(data) do print(v) end</code></pre>
+<h2 id="representation-of-a-killer-sudoku-as-a-covering-problem">Representation of a Killer Sudoku as a covering problem</h2>
+<p>It is customary for the cages in a Killer sudoku to form a disjoint partition of the Sudoku grid, and for all cage totals to be given, but neither condition is necessary. We label cages as we label boxes, except that (staying near the end of the alphabet) <code>y</code> instead of <code>x</code> is followed by the two-character label of the leading cell (i.e. the one in which the number is printed).</p>
+<p>We can think of a classic Sudoku as a Killer Sudoku with some one-cell cages. The only possible value for the cell is the cage total. Say that it is given that the digit in cell <code>Df</code> is <code>9</code>. Then that is equivalent to saying that the cage <code>yDf</code> can only contain <code>9</code>. The subset describing that information is</p>
+<pre><code>Df D9 f9 x59 yDf9</code></pre>
+<p>For the working of the Dancing Links algorithm, it is obvious that adding a unique label <code>yDf9</code> does exactly the same as adding a unique label <code>Df9</code>. The difference lies in how we think of it: <code>yDf9</code> says something about the the cage rather than the cell, which is important for generalization.</p>
+<p>In general, a total for a cage implies that there are only certain digit combinations possible. Killer books usually list them. Specifying those combinations is the only way of conveying the total to the Dancing Links algorithm, since the covering problem itself has no notion of addition.</p>
+<p>As long as there is only one possible combination for a cage, all we need to do is to add a cage-digit label to the appropriate subsets. If for example the cage <code>yAa</code> contains the cells <code>Aa</code>, <code>Ab</code> and <code>Bb</code> and has total 7, which can only be the combination <code>124</code>, the three subsets for each of these containing <code>1</code>, <code>2</code> or <code>4</code> gets the label <code>yAa1</code>, <code>yAa2</code> or <code>yAa4</code> respectively. Only three of those subsets can be in the solution, and there are only these three labels, a perfect match.</p>
+<p>It becomes harder when there is more than one combination. Suppose for example that the total is 9 rather than 7. The combination could be any of <code>126</code>, <code>135</code> or <code>234</code>, so that the cage could contain any of the digits <code>1</code> to <code>6</code>. Eighteen subsets, six for each of the cells, now get just one the labels <code>yAa1</code>, <code>yAa2</code>, <code>yAa3</code>, <code>yAa4</code>, <code>yAa5</code> or <code>yAa6</code>. Only three subsets still get selected, so only three of the new labels get covered. For a valid solution, all six must be covered.</p>
+<p>We therefore add three new subsets, each containing the complementary set of a valid combination. That is, they specify which labels do not get covered by selecting normal cell-digit subsets.</p>
+<pre><code>yAa3 yAa4 yAa5
+yAa2 yAa4 yAa6 
+yAa1 yAa5 yAa6</code></pre>
+<p>One of these must be chosen, since otherwise the cover cannot be exact. The one that is chosen defines which three digits are not selected, which in effect reduces the problem to the single-combination case.</p>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>Actually <code>dance.w</code> solves a more general covering problem, in which some of the labels are designated primary and others secondary: the subcollection sought for must still be mutually disjoint, but only the primary labels need to be covered. Our labels are all primary.<a href="#fnref1">↩</a></p></li>
+</ol>
+</div>
+</body>
+</html>
